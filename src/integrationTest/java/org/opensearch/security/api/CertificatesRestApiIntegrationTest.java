@@ -14,9 +14,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.StringJoiner;
 import java.util.stream.Collectors;
 
@@ -108,24 +106,27 @@ public class CertificatesRestApiIntegrationTest extends AbstractApiIntegrationTe
     }
 
     private void verifySSLCertsInfo(final TestRestClient client) throws Exception {
-        assertSSLCertsInfo(localCluster.nodes(), CertType.TYPES, ok(() -> client.get(sslCertsPath())));
+        List<CertType> certTypes = new ArrayList<>();
+        for (CertType cert : CertType.CERT_TYPE_REGISTRY) {
+            certTypes.add(cert);
+        }
+        assertSSLCertsInfo(localCluster.nodes(), certTypes, ok(() -> client.get(sslCertsPath())));
         if (localCluster.nodes().size() > 1) {
             final var randomNodes = randomNodes();
             final var nodeIds = randomNodes.stream().map(n -> n.esNode().getNodeEnvironment().nodeId()).collect(Collectors.joining(","));
-            assertSSLCertsInfo(randomNodes, CertType.TYPES, ok(() -> client.get(sslCertsPath(nodeIds))));
+            assertSSLCertsInfo(randomNodes, certTypes, ok(() -> client.get(sslCertsPath(nodeIds))));
         }
-        final var randomCertType = randomFrom(List.copyOf(CertType.TYPES));
+        final var randomCertType = randomFrom(certTypes);
         assertSSLCertsInfo(
             localCluster.nodes(),
-            Set.of(randomCertType),
+            List.of(randomCertType),
             ok(() -> client.get(String.format("%s?cert_type=%s", sslCertsPath(), randomCertType)))
         );
-
     }
 
     private void assertSSLCertsInfo(
         final List<LocalOpenSearchCluster.Node> expectedNode,
-        final Set<String> expectedCertTypes,
+        final List<CertType> expectedCertTypes,
         final TestRestClient.HttpResponse response
     ) {
         final var body = response.bodyAsJsonNode();
@@ -145,20 +146,19 @@ public class CertificatesRestApiIntegrationTest extends AbstractApiIntegrationTe
             assertThat(prettyStringBody, node.get("name").asText(), is(n.getNodeName()));
             assertThat(prettyStringBody, node.has("certificates"));
             final var certificates = node.get("certificates");
-            if (expectedCertTypes.contains(CertType.HTTP.name().toUpperCase(Locale.ROOT))) {
-                final var httpCertificates = certificates.get(CertType.HTTP.name().toUpperCase(Locale.ROOT));
+            if (expectedCertTypes.contains(CertType.HTTP)) {
+                final var httpCertificates = certificates.get(CertType.HTTP.certID());
                 assertThat(prettyStringBody, httpCertificates.isArray());
                 assertThat(prettyStringBody, httpCertificates.size(), is(1));
                 verifyCertsJson(n.nodeNumber(), httpCertificates.get(0));
             }
-            if (expectedCertTypes.contains(CertType.TRANSPORT_CLIENT.name().toUpperCase(Locale.ROOT))) {
-                final var transportCertificates = certificates.get(CertType.TRANSPORT.name().toUpperCase(Locale.ROOT));
+            if (expectedCertTypes.contains(CertType.TRANSPORT_CLIENT)) {
+                final var transportCertificates = certificates.get(CertType.TRANSPORT.certID());
                 assertThat(prettyStringBody, transportCertificates.isArray());
                 assertThat(prettyStringBody, transportCertificates.size(), is(1));
                 verifyCertsJson(n.nodeNumber(), transportCertificates.get(0));
             }
         }
-
     }
 
     private void verifyCertsJson(final int nodeNumber, final JsonNode jsonNode) {
